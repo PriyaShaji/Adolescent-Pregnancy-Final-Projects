@@ -1,0 +1,563 @@
+---
+title: "Adolescent Pregnancy"
+author: "Michele Bradley"
+date: "12/10/2017"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    option: code_folding
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+## Introduction
+
+### The Why:
+
+I recently watched the documentary [“Motherland”](http://www.pbs.org/pov/motherland/) on PBS, described as a “vérité look at the busiest maternity hospital on the planet, in one of the world’s most populous countries: the Philippines”. As a first-generation American-Born-Filipina, the hyper-realistic film left me in awe thinking about a life I could have led. It showcased the lives of girls younger than I was, having their first child and caught in what seems to be a never-ending cycle of adolescent fertility. One 26 year old in particular, already had six children.  I’ve thought about this documentary a lot since I’ve seen it and how we can help empower women or give them access to the right tools so they won’t be caught in a cycle of continuous pregnancy. I asked myself, why is the Philippines having this crisis? So I decided I to take a look at the countries in which adolescent fertility rates are increasing/decreasing, and then determine potential reasons.
+
+### The How:
+
+The data obtained in this project is gathered from The World Bank, Wikipedia, and Twitter. The World Bank data has proven to be incredibly through and informative. In [another project](https://rpubs.com/micheleb/DATA_606_Final_Project), I used multiple linear regression analysis to determine important quantitative time-series variables while understanding adolescent pregnancy rates. Values such as women's health and youth education education were incredibly important values that determined adolescent pregancy. I also noticed that many of the variables that ultimately determined if a country had high amounts of adolescent pregnancy appeared to be incredbily community focused. For example, every percent increase of elder females in a population decreases births per 1000 by 4. So, perhaps an increase in women's care leads to less teenage births. I believe the relationship to elder populations and teenage pregnancy is this: when there are matronly figures such as mothers, aunts, and grandmothers that can nurture young women in the family, there will be less teenage births. In the Philippines, family is incredibly important. If women can be role models or nurture their young daughters/sons to be careful -- despite any governmental believes -- then we can positively impact birth rates in the Philippines. 
+
+This project however, attemps to use more qualitative datasets. Initially, I wanted to scrape government websites to gain information about country's responses to womens health/rights, unfortunately, a project of this magnitude would require restructuring many government pages, translating them into one common langauge (English), and through research to determine what webpages to scrape. Instead, I decided to focus on one metric -- reactions towards women's rights using Wikipedia websites titled "Womens Rights in (Country Name)". These websites had similar strucutres, and often focused on the change in women's rights in a given country over time. I used sentiment analysis to understand how positive, negative, or trusting (etc.,) these webpages were. Some very slighly correlations could be made using multivariable analysis and backwards elimination. 
+
+However, I thought this method might not incorporate the metrics of community I found to be so important before. The book Sapiens by historian Yuval Noah Harari elucidated how the Industrial Revolution spurred a massive change in power. No longer were families as important to our development -- they were, of course important, but through the Industrial Revolution, the power given to families shifted to governments. Education or employment was no longer determined by what family you were born into. Of course, it determines part of it, but in many ways an efficent government is the biggest determinant that can ensure education for its constituents. This balance of government and community shape who we are are people, and perhaps, in some places people are shaped more by governments than by their families, or vice-versa. I hope to use wikipedia websites and twitter data to better understand this balance. 
+
+## Loading Libraries and Obtaining Data
+
+We are using quite a few libraries that help us better understand qualitative datasets, such as tm, RNewsflow, along with libraries to extract twitter data such as twitteR and ROAuth. I uploaded the dataset in question to my github for an easy upload. The original data can be found [here](http://wdi.worldbank.org/table/WV.5 https://data.worldbank.org/topic/gender). They are World Development Indicators and are very comprehensive.
+
+```{r, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(rvest)
+library(stringr)
+library(SnowballC)
+library(tm)
+library(syuzhet)
+library(ggplot2)
+library(twitteR)
+library(ROAuth)
+library(RNewsflow)
+```
+
+```{r}
+#library(dplyr)
+#library(tidyr)
+#library(rvest)
+#library(stringr)
+#library(SnowballC)
+#library(tm)
+#library(syuzhet)
+#library(ggplot2)
+#library(twitteR)
+#library(ROAuth)
+#library(RNewsflow)
+
+gendered_world_indicators <- read.csv("https://raw.githubusercontent.com/Michelebradley/DATA-606/master/Gender_World%20_Indicators.csv", header=TRUE, check.names = FALSE)
+```
+
+### Tidying the Data
+
+```{r}
+tidy_gendered_world_indicators <- gather(gendered_world_indicators, "year", "n", 5:60)
+colnames(tidy_gendered_world_indicators)[colnames(tidy_gendered_world_indicators) == "Country Name"] <- "Country"
+colnames(tidy_gendered_world_indicators)[colnames(tidy_gendered_world_indicators) == "Indicator Name"] <- "Indicator"
+tidy_gendered_world_indicators <- select(tidy_gendered_world_indicators, one_of("Country", "Indicator","year", "n"))
+tidy_gendered_world_indicators <- na.omit(tidy_gendered_world_indicators)
+head(tidy_gendered_world_indicators)
+```
+
+### Finding Biggest Change in Adolescent Pregnancy Rates
+
+Since we are using qualitative data (Wikipedia websites and Twitter data from the last seven days), we can only compare a static numerical value. Therefore, I aimed to find the difference in adolescent pregnancy rates over a recent 15 year change, and the turn of the 21st century. 
+
+```{r}
+adolescent <- filter(tidy_gendered_world_indicators, Indicator==unique(tidy_gendered_world_indicators$Indicator)[8]&(year==2000|year==2015))
+Difference <- NULL
+
+for (country in unique(adolescent$Country)) {
+  temp_00 <- filter(adolescent, Country==country & year==2000)
+  temp_15 <- filter(adolescent, Country==country & year==2015)
+  n_00 <- temp_00$n
+  n_15 <- temp_15$n
+  change <- n_15-n_00
+  change_temp <- data.frame(country, change)
+  Difference <- rbind(change_temp, Difference)
+}
+```
+
+```{r}
+head(arrange(Difference, desc(change)))
+```
+
+```{r}
+tail(arrange(Difference, desc(change)))
+```
+
+### Visualize the Change -- Philippines
+
+```{r, include=FALSE}
+indicators <- unique(tidy_gendered_world_indicators$Indicator)
+```
+
+```{r}
+Philippines <- tidy_gendered_world_indicators %>%
+  filter(Country == "Philippines")
+fertility_phi <- Philippines %>%
+  filter(Indicator == indicators[8])
+
+PHI_fertility <- ggplot(fertility_phi, aes(year, n))
+PHI_fertility + geom_jitter() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+## Wikipedia articles
+
+I started my analysis by obtaining every "Womens Rights in (Country)" articles available on Wikipedia. There were around 25, so in one dataframe, we now have the country, URL, and the percent change. We did a left join on the URLs so we would only use those countries for analysis.
+
+```{r, include=FALSE}
+URLs<- c("https://en.wikipedia.org/wiki/Women%27s_rights_in_Iran", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Afghanistan", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Saudi_Arabia", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Cuba", "https://en.wikipedia.org/wiki/Women_in_Pakistan","https://en.wikipedia.org/wiki/Women%27s_rights_in_the_Philippines","https://en.wikipedia.org/wiki/Women_in_India", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Brazil", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Myanmar", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Ukraine", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Nepal", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Tonga","https://en.wikipedia.org/wiki/Women%27s_rights_in_Haiti", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Bahrain","https://en.wikipedia.org/wiki/Women%27s_rights_in_Colombia", "https://en.wikipedia.org/wiki/Women_in_Egypt", "https://en.wikipedia.org/wiki/Women%27s_rights_in_North_Korea", "https://en.wikipedia.org/wiki/Women%27s_rights_in_Papua_New_Guinea", "https://en.wikipedia.org/wiki/Women_in_Yemen", "https://en.wikipedia.org/wiki/Women_in_Turkey", "https://en.wikipedia.org/wiki/Women_in_Iraq", "https://en.wikipedia.org/wiki/Women_in_Qatar", "https://en.wikipedia.org/wiki/Women_in_Bangladesh", "https://en.wikipedia.org/wiki/Women_in_Japan", "https://en.wikipedia.org/wiki/Women_in_Lebanon", "https://en.wikipedia.org/wiki/Women_in_Seychelles", "https://en.wikipedia.org/wiki/Women_in_the_United_Arab_Emirates")
+country <- (c("Iran", "Afganistan", "Saudi Arabia", "Cuba", "Pakistan", "Philippines", "India", "Brazil", "Myanmar", "Ukraine", "Nepal", "Tonga", "Haiti", "Bahrain", "Colombia", "Egypt", "North Korea", "Papau New Guinea", "Yemen", "Turkey", "Iraq", "Qatar", "Bangladesh", "Japan", "Lebanon", "Seychelles", "United Arab Emirates"))
+countries_df <- data.frame(URLs, country)
+```
+
+```{r}
+data <- merge(countries_df, Difference, by="country")
+head(arrange(data, desc(change)))
+```
+
+### Sentiment Analysis
+
+Next, we scraped all of these webistes using the CSS Selector Gadget tool and cleaned up the words using tm_map. The get_nrc_sentiment function from the syuznet package was then used to obtain setniment from all of these websites. The values were converted to a percentage and written to a dataframe.
+
+```{r}
+obtain_text <- function(url) {
+  bullets <- url %>%
+    read_html() %>%
+    html_nodes("#mw-content-text p") %>%
+    html_text()
+
+  text <- url %>%
+    read_html() %>%
+    html_nodes("#mw-content-text ul li") %>%
+    html_text()
+
+bullet <- unlist(str_extract_all(bullets, "\\w+"))
+text <- unlist(str_extract_all(text, "\\w+"))
+words <- c(bullet, text)
+
+words <- Corpus(VectorSource(words))
+# Convert the text to lower case
+words <- tm_map(words, content_transformer(tolower))
+# Remove numbers
+words <- tm_map(words, removeNumbers)
+# Remove english common stopwords
+words <- tm_map(words, removeWords, stopwords("english"))
+# Remove punctuations
+words <- tm_map(words, removePunctuation)
+# Eliminate extra white spaces
+words <- tm_map(words, stripWhitespace)
+ 
+return(words)
+}
+```
+
+```{r}
+percent <- NULL
+
+obtain_sentiment <- function(data){
+  for (country in unique(data$country)){
+    URL <- data[data$country == country, "URLs"]
+    Sys.sleep(5)
+    wiki_data <- obtain_text(as.character(URL))
+    wiki_data <- as.character(wiki_data)
+    p <- get_nrc_sentiment(wiki_data)
+    total <- sum(p[1,])
+    percent_anger <- (as.numeric(p$anger[1])/total)*100
+    percent_anticipation <- (as.numeric(p$anticipation[1])/total)*100
+    percent_disgust <- (as.numeric(p$disgust[1])/total)*100
+    percent_fear <- (as.numeric(p$fear[1])/total)*100
+    percent_joy <- (as.numeric(p$joy[1])/total)*100
+    percent_sadness <- (as.numeric(p$sadness[1])/total)*100
+    percent_surprise <- (as.numeric(p$surprise[1])/total)*100
+    percent_trust <- (as.numeric(p$trust[1])/total)*100
+    percent_negative <- (as.numeric(p$negative[1])/total)*100
+    percent_positive <- (as.numeric(p$positive [1])/total)*100
+    values <- data.frame(country, percent_anger, percent_anticipation, percent_disgust, percent_fear, percent_joy, percent_sadness, percent_surprise, percent_trust, percent_negative, percent_positive)
+    percent <- rbind(values, percent)
+  }
+  sentiment <- merge(percent, Difference, by="country")
+  return (sentiment)
+}
+
+sentiment <- obtain_sentiment(data)
+sentiment
+```
+
+Once this data was obtained, we could easily run regression analysis on it and find correlations between the variables and the percent change in adolescent pregnancy over the years. 
+
+```{r}
+percent_anger <- sentiment$percent_anger
+percent_anticipation <- sentiment$percent_anticipation
+percent_disgust <- sentiment$percent_disgust
+percent_fear <- sentiment$percent_fear
+percent_joy <- sentiment$percent_joy
+percent_sadness <- sentiment$percent_sadness
+percent_surprise <- sentiment$percent_surprise
+percent_trust <- sentiment$percent_trust
+percent_negative <- sentiment$percent_negative
+percent_positive <- sentiment$percent_positive
+change <- sentiment$change
+correlation <- lm(change ~ percent_anger + percent_anticipation + percent_disgust + percent_fear + percent_joy + percent_sadness + percent_surprise + percent_trust + percent_negative + percent_positive)
+summary(correlation)
+```
+
+Using backwards elimination, the most important variables were interestingly, percent_fear, percent_joy, percent_trust, and percent_negative.
+
+```{r}
+correlation <- lm(change ~ percent_fear + percent_joy + percent_trust + percent_negative)
+summary(correlation)
+```
+
+$$ \widehat{\mathrm{births \; per \; 1,000 \; women \; ages \; 15-19}} = \beta_0 + \beta_1(Percent \; Fear \;) + \beta_2(Percent \; Joy \;) + \beta_3(Percent \; trust) + \beta_3(Percent \; negative)$$
+
+$$ \widehat{\mathrm{births \; per \; 1,000 \; women \; ages \; 15-19}} = 451.436 + \beta_1(Percent \; Fear \;) - 4.265 (Percent \; Joy \;) - 10.813(Percent \; trust) -13.362 (Percent \; negative)$$
+
+In essence, as the percent fear and negative sentiment in the wikipedia article increases, the less births per 1000 women ages 15-19 there will be in that country. Perhaps because fear and thinking negative ultimately allows us to make change. The ability to see what the problems are can help us to fix them. Joy and trust also decreased birth rates, perhaps because both allow change to be made.
+
+## twitteR Analysis
+
+Now, I am attempting to see if we can use tweets to determine if families or governments play a bigger role in each country by taking twitter data that contain the word of the country (and are in english -- a potentially biased result) and compare it to wikipedia sites "family" and "government" using documents.compare. However, it doesn't seem like this is the best method to obtain qualitative data about an entire country -- because so many tweets aren't about either governmental issues or family. 
+
+```{r, include=FALSE}
+consumer_key <- "Lc9FXrengfleiHETtaQjkXZLw"
+consumer_secret <- "xZO0gvoTUjmifH3NCl8t3ublajdpx9hVXcAaQD79WArYwRgGo9"
+access_token <- "936759262713405441-2Y7TQmqHiRy0IRKg8uEztq9dpoxwDub"
+access_secret <- "x0Ct7znVec7BgxFMXmMGpn4e8rfUXQJqIfFyfAuRtgYde"
+```
+
+```{r}
+setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
+```
+
+```{r}
+get_tweets <- function(search){
+  tweets <- searchTwitter(search,
+                          n=1000,
+                          lang="en",
+                          retryOnRateLimit = 100,
+                          resultType = 'recent')
+  return (tweets)
+}
+```
+
+```{r}
+clean_text <- function(words) {
+words <- Corpus(VectorSource(words))
+# Convert the text to lower case
+words <- tm_map(words, content_transformer(tolower))
+# Remove numbers
+words <- tm_map(words, removeNumbers)
+# Remove english common stopwords
+words <- tm_map(words, removeWords, stopwords("english"))
+# Remove punctuations
+words <- tm_map(words, removePunctuation)
+# Eliminate extra white spaces
+words <- tm_map(words, stripWhitespace)
+ 
+return(words)
+}
+```
+
+```{r}
+dtm_names <- NULL
+
+for (country in unique(countries_df$country)){
+  country_search <- paste(country, "-filter:retweets")
+  country_name <- gsub("[[:space:]]", "", country)
+  title <- paste(country_name, "_tweets")
+  temp <- get_tweets(country_search)
+  temp <- clean_text(temp)
+  words <- TermDocumentMatrix(temp)
+  assign(title, words)
+  dtm_names <- c(dtm_names, title)
+}
+```
+
+```{r, supressWarnings = TRUE}
+family <- obtain_text("https://en.wikipedia.org/wiki/Family")
+government <- obtain_text("https://en.wikipedia.org/wiki/Government")
+
+familydtm <- TermDocumentMatrix(family)
+governmentdtm <- TermDocumentMatrix(government)
+```
+
+```{r}
+compare_documents <- function(dtm){
+  similarity_fam <- documents.compare(dtm=dtm, dtm.y=familydtm, measure="cosine", min.similarity = .05)
+  similarity_gov <- documents.compare(dtm=dtm, dtm.y=governmentdtm, measure="cosine", min.similarity = .05)
+  
+  cos_fam <- mean(similarity_fam$similarity)
+  cos_gov <- mean(similarity_gov$similarity)
+  
+  country <- c(cos_fam, cos_gov)
+  
+  return (country)
+}
+
+Iran <- compare_documents(`Iran _tweets`)
+Iran
+```
+
+```{r, include=FALSE}
+Afganistan <- compare_documents(`Afganistan _tweets`)
+SaudiArabia <- compare_documents(`SaudiArabia _tweets`)
+Cuba <- compare_documents(`Cuba _tweets`)
+Pakistan <- compare_documents(`Pakistan _tweets`)
+Philippines <- compare_documents(`Philippines _tweets`)
+India <- compare_documents(`India _tweets`)
+Brazil <- compare_documents(`Brazil _tweets`)
+Myanmar <- compare_documents(`Myanmar _tweets`)
+Ukraine <- compare_documents(`Ukraine _tweets`)
+Nepal <- compare_documents(`Nepal _tweets`)
+Tonga <- compare_documents(`Tonga _tweets`)
+Haiti <- compare_documents(`Haiti _tweets`)
+Bahrain <- compare_documents(`Bahrain _tweets`)
+Colombia <- compare_documents(`Colombia _tweets`)
+Egypt <- compare_documents(`Egypt _tweets`)
+NorthKorea <- compare_documents(`NorthKorea _tweets`)
+PapuNewGuinea <- compare_documents(`PapauNewGuinea _tweets`)
+Yemen <- compare_documents(`Yemen _tweets`)
+Turkey <- compare_documents(`Turkey _tweets`)
+Iraq <- compare_documents(`Iraq _tweets`)
+Qatar <- compare_documents(`Qatar _tweets`)
+Bangladesh <- compare_documents(`Bangladesh _tweets`)
+Japan <- compare_documents(`Japan _tweets`)
+Lebanon <- compare_documents(`Lebanon _tweets`)
+Seychelles <- compare_documents(`Seychelles _tweets`)
+UnitedArabEmirates <- compare_documents(`UnitedArabEmirates _tweets`)
+```
+
+```{r, supressWarnings = TRUE}
+df <- data.frame(rbind(Iran, Afganistan, SaudiArabia, Cuba, Pakistan, Philippines, India, Brazil, Myanmar, Ukraine, Nepal, Tonga, Haiti, Bahrain, Colombia, Egypt, NorthKorea, PapuNewGuinea, Yemen, Turkey, Iraq, Qatar, Bangladesh, Japan,Lebanon, Seychelles , UnitedArabEmirates))
+colnames(df) <- c("family", "government")
+df
+```
+
+## Womens Rights Wikipedia Pages to Wikipedia
+
+Wikipedia articles came to the rescuse again, and were an improvement over twitter. Using the same articles as before, we compare each document with family and government using document.compare. 
+
+```{r}
+dtm_wiki_names <- NULL
+
+for (country in unique(countries_df$country)){
+  URL <- countries_df[countries_df$country == country, "URLs"]
+  Sys.sleep(5)
+  title <- paste(country, "_wiki")
+  wiki_data <- obtain_text(as.character(URL))
+  temp <- TermDocumentMatrix(wiki_data)
+  assign(title, temp)
+  dtm_wiki_names <- c(dtm_wiki_names, title)
+}
+```
+
+```{r, include=FALSE}
+Iran <- compare_documents(`Iran _wiki`)
+Afganistan <- compare_documents(`Afganistan _wiki`)
+SaudiArabia <- compare_documents(`Saudi Arabia _wiki`)
+Cuba <- compare_documents(`Cuba _wiki`)
+Pakistan <- compare_documents(`Pakistan _wiki`)
+Philippines <- compare_documents(`Philippines _wiki`)
+India <- compare_documents(`India _wiki`)
+Brazil <- compare_documents(`Brazil _wiki`)
+Myanmar <- compare_documents(`Myanmar _wiki`)
+Ukraine <- compare_documents(`Ukraine _wiki`)
+Nepal <- compare_documents(`Nepal _wiki`)
+Tonga <- compare_documents(`Tonga _wiki`)
+Haiti <- compare_documents(`Haiti _wiki`)
+Bahrain <- compare_documents(`Bahrain _wiki`)
+Colombia <- compare_documents(`Colombia _wiki`)
+Egypt <- compare_documents(`Egypt _wiki`)
+NorthKorea <- compare_documents(`North Korea _wiki`)
+PapuNewGuinea <- compare_documents(`Papau New Guinea _wiki`)
+Yemen <- compare_documents(`Yemen _wiki`)
+Turkey <- compare_documents(`Turkey _wiki`)
+Iraq <- compare_documents(`Iraq _wiki`)
+Qatar <- compare_documents(`Qatar _wiki`)
+Bangladesh <- compare_documents(`Bangladesh _wiki`)
+Japan <- compare_documents(`Japan _wiki`)
+Lebanon <- compare_documents(`Lebanon _wiki`)
+Seychelles <- compare_documents(`Seychelles _wiki`)
+UnitedArabEmirates <- compare_documents(`United Arab Emirates _wiki`)
+df_wiki <- data.frame(rbind(Iran, Afganistan, SaudiArabia, Cuba, Pakistan, Philippines, India, Brazil, Myanmar, Ukraine, Nepal, Tonga, Haiti, Bahrain, Colombia, Egypt, NorthKorea, PapuNewGuinea, Yemen, Turkey, Iraq, Qatar, Bangladesh, Japan,Lebanon, Seychelles , UnitedArabEmirates))
+colnames(df_wiki) <- c("family", "government")
+```
+
+```{r}
+df_wiki
+```
+
+## Kmeans
+
+Each country is assigned a similarity score to the documents family and government, and the results are clustered using Kmeans. Our goal is to find countries that act in similar ways when it comes to womens' rights. However, it seems like there is a linear relationship between the two, something I did not expect. I expected these results to be spread out so there would be a clear destinction between countries that were more effected by government and others more effected by family. The goal was to group these countries together to run analysis, but because the groups were so small, we couldn't do it. In the future, I'd like to use a bigger dataset or play around with other variables.
+
+```{r}
+kmeansAIC <- function(fit){
+  m <- ncol(fit$centers)
+  n <- length(fit$cluster)
+  k <- nrow(fit$centers)
+  D <- fit$tot.withinss
+  return(D + 2*m*k)
+}
+```
+
+```{r}
+cos_fam <- df_wiki$family
+cos_gov <- df_wiki$government
+country <- row.names(df_wiki)
+
+cluster_model <- function (fam, gov, country)
+{
+  kmax <- 10 # the maximum number of clusters we will examine
+  kmfit <- list() # create and empty list
+  totwss <- rep(0,kmax) # will be filled with total sum of within group sum squares
+ 
+  for (i in 1:kmax){
+    data <- cbind(fam,gov)
+    kclus <- kmeans(data, centers=i)
+    totwss[i] <- kclus$tot.withinss
+    kmfit[[i]] <- kclus
+  }
+  aic=sapply(kmfit,kmeansAIC)
+  v = -diff(aic)
+  nv = length(v)
+  fom = v[1:(nv-1)]/v[2:nv]
+  nclus = which.max(fom)+1
+  data <- cbind(fam, gov)
+  grputil <- kmeans(data, centers=nclus)
+  o <- grputil$cluster+0
+  clustered <- cbind(fam, gov, o, country)
+  colnames(clustered) <- c("Family", "Government", "o", "country")
+    clustered <- data.frame(clustered)
+  return(list(nclus=nclus, clustered=clustered))
+}
+
+kmeans <- cluster_model(cos_fam, cos_gov, country)
+kmeans
+```
+
+```{r}
+clustered_data <- kmeans$clustered
+
+ggplot(clustered_data, aes(Family, Government)) + geom_text(aes(label=country, color=o)) + theme(axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+```{r, include=FALSE}
+URLs<- c("https://en.wikipedia.org/wiki/Iran", "https://en.wikipedia.org/wiki/Afghanistan", "https://en.wikipedia.org/wiki/Saudi_Arabia", "https://en.wikipedia.org/wiki/Cuba", "https://en.wikipedia.org/wiki/Pakistan","https://en.wikipedia.org/wiki/Philippines","https://en.wikipedia.org/wiki/India", "https://en.wikipedia.org/wiki/Brazil", "https://en.wikipedia.org/wiki/Myanmar", "https://en.wikipedia.org/wiki/Ukraine", "https://en.wikipedia.org/wiki/Nepal", "https://en.wikipedia.org/wiki/Tonga","https://en.wikipedia.org/wiki/Haiti", "https://en.wikipedia.org/wiki/Bahrain","https://en.wikipedia.org/wiki/Colombia", "https://en.wikipedia.org/wiki/Egypt", "https://en.wikipedia.org/wiki/North_Korea", "https://en.wikipedia.org/wiki/Papua_New_Guinea", "https://en.wikipedia.org/wiki/Yemen", "https://en.wikipedia.org/wiki/Turkey", "https://en.wikipedia.org/wiki/Iraq", "https://en.wikipedia.org/wiki/Qatar", "https://en.wikipedia.org/wiki/Bangladesh", "https://en.wikipedia.org/wiki/Japan", "https://en.wikipedia.org/wiki/Lebanon", "https://en.wikipedia.org/wiki/Seychelles", "https://en.wikipedia.org/wiki/United_Arab_Emirates")
+country <- (c("Iran", "Afganistan", "Saudi Arabia", "Cuba", "Pakistan", "Philippines", "India", "Brazil", "Myanmar", "Ukraine", "Nepal", "Tonga", "Haiti", "Bahrain", "Colombia", "Egypt", "North Korea", "Papau New Guinea", "Yemen", "Turkey", "Iraq", "Qatar", "Bangladesh", "Japan", "Lebanon", "Seychelles", "United Arab Emirates"))
+countries_general_df <- data.frame(URLs, country)
+```
+
+```{r, include=FALSE}
+dtm_gen_wiki_names <- NULL
+
+for (country in unique(countries_general_df$country)){
+  URL <- countries_general_df[countries_general_df$country == country, "URLs"]
+  Sys.sleep(5)
+  title <- paste(country, "_wiki")
+  wiki_data <- obtain_text(as.character(URL))
+  temp <- TermDocumentMatrix(wiki_data)
+  assign(title, temp)
+  dtm_gen_wiki_names <- c(dtm_wiki_names, title)
+}
+
+Iran <- compare_documents(`Iran _wiki`)
+```
+
+```{r, include=FALSE}
+Afganistan <- compare_documents(`Afganistan _wiki`)
+SaudiArabia <- compare_documents(`Saudi Arabia _wiki`)
+Cuba <- compare_documents(`Cuba _wiki`)
+Pakistan <- compare_documents(`Pakistan _wiki`)
+Philippines <- compare_documents(`Philippines _wiki`)
+India <- compare_documents(`India _wiki`)
+Brazil <- compare_documents(`Brazil _wiki`)
+Myanmar <- compare_documents(`Myanmar _wiki`)
+Ukraine <- compare_documents(`Ukraine _wiki`)
+Nepal <- compare_documents(`Nepal _wiki`)
+Tonga <- compare_documents(`Tonga _wiki`)
+Haiti <- compare_documents(`Haiti _wiki`)
+Bahrain <- compare_documents(`Bahrain _wiki`)
+Colombia <- compare_documents(`Colombia _wiki`)
+Egypt <- compare_documents(`Egypt _wiki`)
+NorthKorea <- compare_documents(`North Korea _wiki`)
+PapuNewGuinea <- compare_documents(`Papau New Guinea _wiki`)
+Yemen <- compare_documents(`Yemen _wiki`)
+Turkey <- compare_documents(`Turkey _wiki`)
+Iraq <- compare_documents(`Iraq _wiki`)
+Qatar <- compare_documents(`Qatar _wiki`)
+Bangladesh <- compare_documents(`Bangladesh _wiki`)
+Japan <- compare_documents(`Japan _wiki`)
+Lebanon <- compare_documents(`Lebanon _wiki`)
+Seychelles <- compare_documents(`Seychelles _wiki`)
+UnitedArabEmirates <- compare_documents(`United Arab Emirates _wiki`)
+df_wiki <- data.frame(rbind(Iran, Afganistan, SaudiArabia, Cuba, Pakistan, Philippines, India, Brazil, Myanmar, Ukraine, Nepal, Tonga, Haiti, Bahrain, Colombia, Egypt, NorthKorea, PapuNewGuinea, Yemen, Turkey, Iraq, Qatar, Bangladesh, Japan,Lebanon, Seychelles , UnitedArabEmirates))
+colnames(df_wiki) <- c("family", "government")
+```
+
+```{r, include=FALSE}
+cos_fam <- df_wiki$family
+cos_gov <- df_wiki$government
+country <- row.names(df_wiki)
+
+cluster_model <- function (fam, gov, country)
+{
+  kmax <- 10 # the maximum number of clusters we will examine
+  kmfit <- list() # create and empty list
+  totwss <- rep(0,kmax) # will be filled with total sum of within group sum squares
+ 
+  for (i in 1:kmax){
+    data <- cbind(fam,gov)
+    kclus <- kmeans(data, centers=i)
+    totwss[i] <- kclus$tot.withinss
+    kmfit[[i]] <- kclus
+  }
+  aic=sapply(kmfit,kmeansAIC)
+  v = -diff(aic)
+  nv = length(v)
+  fom = v[1:(nv-1)]/v[2:nv]
+  nclus = which.max(fom)+1
+  data <- cbind(fam, gov)
+  grputil <- kmeans(data, centers=nclus)
+  o <- grputil$cluster+0
+  clustered <- cbind(fam, gov, o, country)
+  colnames(clustered) <- c("Family", "Government", "o", "country")
+    clustered <- data.frame(clustered)
+  return(list(nclus=nclus, clustered=clustered))
+}
+
+kmeans <- cluster_model(cos_fam, cos_gov, country)
+kmeans
+```
+
+```{r, include=FALSE}
+clustered_data <- kmeans$clustered
+
+ggplot(clustered_data, aes(Family, Government)) + geom_text(aes(label=country, color=o)) + theme(axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+## Conclusions
+
+Batch understanding of qualitative data is a difficult process, but I think wikipedia websites are a great tool for understanding concepts and relationships because they are all written in very similar formats. In the future, I'd like to work more with these webpages, and perhaps include some form of link analysis as well. 
+
+
+
